@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  python_app:
+    container_name: python-contenedor
+    build:
+      context: ./recomendaciones
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    networks:
+      - my_network
+    depends_on:
+      - redis
+      - mongo_db  
+    links:
+      - redis
+      - mongo_db  
+    environment:
+      - FLASK_ENV=development
+
+  redis:
+    image: redis
+    container_name: redis-contenedor
+    networks:
+      - my_network
+    ports:
+      - "6379:6379"
+
+  mongo_db:  
+    image: mongo:latest  
+    container_name: mongo-contenedor  
+    networks:
+      - my_network
+    ports:
+      - "27017:27017"  
+
+  dotnet_worker:
+    container_name: appnet-contenedor
+    build:
+      context: ./worker
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+    networks:
+      - my_network
+
+networks:
+  my_network:
+    driver: bridge

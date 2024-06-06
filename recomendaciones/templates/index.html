@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Menu de Videos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #181818;
+            color: #FFF;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        h1 {
+            margin: 20px 0;
+        }
+        .video-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .video-item {
+            margin: 10px;
+            text-align: center;
+        }
+        .video-thumbnail {
+            width: 150px;
+            height: auto;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .video-thumbnail:hover {
+            transform: scale(1.1);
+        }
+        .video-modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.8);
+        }
+        .video-modal-content {
+            margin: 5% auto;
+            padding: 20px;
+            width: 80%;
+            max-width: 700px;
+            background-color: #282828;
+            text-align: center;
+            color: white;
+        }
+        .close {
+            color: red;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+        }
+        .close:hover,
+        .close:focus {
+            color: black;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        iframe {
+            width: 100%;
+            height: 400px;
+        }
+        .progress-bar-container {
+            width: 100%;
+            background-color: #444;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress-bar {
+            width: 0;
+            height: 20px;
+            background-color: #76c7c0;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Menu de Videos</h1>
+    <div class="video-container">
+        <div class="video-item">
+            <img src="{{ video.thumbnail }}" class="video-thumbnail" onclick="openVideoModal('{{ video.id }}', '{{ video.youtube_id }}', '{{video.genre}}')" alt="{{ video.title }}">
+            <p>{{ video.title }} <br> <small>{{ video.genre }}</small></p>
+        </div>
+    </div>
+    
+    <div id="recommendations" style="display: block;"> 
+        <h2 style="color: #181818;">Recomendaciones:</h2>
+        <div style="color: #181818;" id="recommendationsList">
+            {% for recommendation in recommendations %}
+            <div style="color: #181818;">{{ recommendation.title }}</div>
+            {% endfor %}
+        </div>
+    </div>
+        
+
+<div id="videoModal" class="video-modal">
+    <div class="video-modal-content">
+        <span class="close" onclick="closeVideoModal()">&times;</span>
+        <iframe id="videoPlayer" src="" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+        <div class="progress-bar-container">
+            <div id="progressBar" class="progress-bar"></div>
+        </div>
+        <div id="watchTime"></div>
+    </div>
+</div>
+
+<script>
+    let watchStartTime;
+    let videoId;
+    let totalTime = 60;
+    let progressBar;
+    let interval;
+    let genre;
+
+    function openVideoModal(id, youtube_id, videoGenre) {
+        videoId = id;
+        watchStartTime = Date.now();
+        genre = videoGenre;
+        var videoUrl = 'https://www.youtube.com/embed/' + youtube_id + '?autoplay=1';
+        document.getElementById('videoPlayer').src = videoUrl;
+        document.getElementById('videoModal').style.display = "block";
+
+        progressBar = document.getElementById('progressBar');
+        progressBar.style.width = '0%';
+        
+        interval = setInterval(updateProgressBar, 1000);
+    }
+
+    function closeVideoModal() {
+        clearInterval(interval);
+        
+        let watchEndTime = Date.now();
+        let watchTime = Math.floor((watchEndTime - watchStartTime) / 1000);
+        document.getElementById('videoPlayer').src = "";
+        document.getElementById('videoModal').style.display = "none";
+
+        document.getElementById('watchTime').innerText = `You watched ${watchTime}/${totalTime} seconds`;
+
+        fetch('/save_watch_time', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                video_id: videoId,
+                watch_time: watchTime,
+                total_time: totalTime,
+                genre: genre
+            })
+        }).then(response => response.json())
+        .then(data => {
+            console.log(data);
+            fetch(`/next_recommendations/${videoId}`)
+                .then(response => response.json())
+                .then(recommendations => {
+                    let recommendationsList = document.getElementById('recommendationsList');
+                    recommendationsList.innerHTML = '';
+                    recommendations.forEach(recommendation => {
+                        let recommendationItem = document.createElement('div');
+                        recommendationItem.innerText = recommendation.title;
+                        recommendationsList.appendChild(recommendationItem);
+                    });
+                    let nextVideoId = recommendations[0].id; 
+                    let nextVideoYoutubeId = recommendations[0].youtube_id;
+                    openVideoModal(nextVideoId, nextVideoYoutubeId, recommendations[0].genres);
+                });
+        });
+    }
+
+    function getRecommendations(videoId) {
+        fetch(`/get_recommendations/${videoId}`)
+            .then(response => response.json())
+            .then(recommendations => {
+                console.log('Recommendations:', recommendations);
+                let recommendationsList = document.getElementById('recommendationsList');
+                recommendationsList.innerHTML = '';
+                recommendations.forEach(recommendation => {
+                    let recommendationItem = document.createElement('div');
+                    recommendationItem.innerText = recommendation.title;
+                    recommendationsList.appendChild(recommendationItem);
+                });
+                document.getElementById('recommendations').style.display = 'block';
+
+                // Si hay una recomendación, cargar automáticamente el siguiente video
+                if (recommendations.length > 0) {
+                    openVideoModal(recommendations[0].id, recommendations[0].youtube_id, recommendations[0].genre);
+                }
+            });
+    }
+
+
+    function updateProgressBar() {
+        let currentTime = Math.floor((Date.now() - watchStartTime) / 1000);
+        let percentage = (currentTime / totalTime) * 100;
+        progressBar.style.width = percentage + '%';
+
+        if (currentTime >= totalTime) {
+            clearInterval(interval);
+        }
+    }
+</script>
+
+</body>
+</html>
